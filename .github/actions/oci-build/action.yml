@@ -26,6 +26,14 @@ inputs:
     required: false
     description: 'The containerfile to use to build the image'
     default: './Containerfile'
+  skip-checkout:
+    required: false
+    description: 'Skip the checkout step. Use when source is already checked out and modified (e.g. by hermeto-prefetch inject-files).'
+    default: 'false'
+  extra-args:
+    required: false
+    description: 'Additional newline-separated arguments for buildah-build (e.g. volume mounts, --network none).'
+    default: ''
 
 outputs:
   artifact-id:
@@ -39,6 +47,7 @@ runs:
   using: "composite"
   steps:
     - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd #v6.0.2
+      if: ${{ inputs.skip-checkout != 'true' }}
       with:
         ref: ${{ inputs.ref }}
 
@@ -51,6 +60,7 @@ runs:
         extra-args: |
           --squash
           --tag oci-archive:oci-image.tar
+          ${{ inputs.extra-args }}
 
     - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
       id: upload-oci-image
