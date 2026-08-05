@@ -66,10 +66,9 @@ runs:
         set -euo pipefail
 
         # Convert JSON input to positional arguments for hermeto fetch-deps
-        ARGS=$(echo '${{ inputs.packages }}' | python3 -c "
+        mapfile -t ARGS < <(echo '${{ inputs.packages }}' | python3 -c "
         import json, sys
         data = json.load(sys.stdin)
-        # Normalize to array
         if isinstance(data, dict):
             data = [data]
         for item in data:
@@ -83,7 +82,7 @@ runs:
           fetch-deps \
             --source "${{ inputs.source }}" \
             --output "${{ inputs.output-dir }}" \
-            $ARGS
+            "${ARGS[@]}"
 
     - name: Generate environment file
       shell: bash
