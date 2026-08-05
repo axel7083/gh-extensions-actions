@@ -65,16 +65,6 @@ runs:
       run: |
         set -euo pipefail
 
-        # Convert JSON input to positional arguments for hermeto fetch-deps
-        mapfile -t ARGS < <(echo '${{ inputs.packages }}' | python3 -c "
-        import json, sys
-        data = json.load(sys.stdin)
-        if isinstance(data, dict):
-            data = [data]
-        for item in data:
-            print(json.dumps(item))
-        ")
-
         podman run --rm \
           -v "$PWD:$PWD:z" \
           -w "$PWD" \
@@ -82,7 +72,7 @@ runs:
           fetch-deps \
             --source "${{ inputs.source }}" \
             --output "${{ inputs.output-dir }}" \
-            "${ARGS[@]}"
+            '${{ inputs.packages }}'
 
     - name: Generate environment file
       shell: bash
