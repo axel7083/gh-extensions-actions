@@ -1,0 +1,102 @@
+#
+# Copyright (C) 2026 Red Hat, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+# http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: 'podman-desktop-install'
+description: 'Download and install Podman Desktop production binary (Linux & Windows)'
+
+inputs:
+  version:
+    required: false
+    description: 'Stable Podman Desktop version to install (e.g. 1.29.1). If omitted, the latest prerelease is used.'
+  github-token:
+    required: false
+    description: 'GitHub token for API calls when resolving the latest prerelease version (avoids rate-limiting).'
+
+outputs:
+  binary:
+    value: ${{ steps.install-linux.outputs.binary || steps.install-windows.outputs.binary }}
+    description: 'Absolute path to the installed Podman Desktop binary'
+  version:
+    value: ${{ steps.resolve.outputs.version }}
+    description: 'The resolved Podman Desktop version that was installed'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Resolve Podman Desktop version
+      id: resolve
+      shell: bash
+      env:
+        INPUT_VERSION: ${{ inputs.version }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+      run: |
+        set -euo pipefail
+
+        if [[ -n "$INPUT_VERSION" ]]; then
+          echo "Using provided stable version: $INPUT_VERSION"
+          echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+          echo "repo=podman-desktop/podman-desktop" >> "$GITHUB_OUTPUT"
+        else
+          echo "No version provided, resolving latest prerelease..."
+          AUTH_HEADER=""
+          if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+            AUTH_HEADER="Authorization: Bearer $GITHUB_TOKEN"
+          fi
+          TAG=$(curl -sfL \
+            ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+            "https://api.github.com/repos/podman-desktop/prereleases/releases" \
+            | jq -r '.[0].tag_name')
+          VERSION="${TAG#v}"
+          echo "Resolved latest prerelease: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "repo=podman-desktop/prereleases" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Install Podman Desktop (Linux)
+      if: runner.os == 'Linux'
+      id: install-linux
+      shell: bash
+      env:
+        PD_VERSION: ${{ steps.resolve.outputs.version }}
+        PD_REPO: ${{ steps.resolve.outputs.repo }}
+      run: |
+        set -euo pipefail
+
+        echo "Downloading Podman Desktop $PD_VERSION for Linux"
+        curl -sfL "https://github.com/$PD_REPO/releases/download/v$PD_VERSION/podman-desktop-$PD_VERSION-x64.tar.gz" -o podman-desktop.tar.gz
+        mkdir -p podman-desktop-dir
+        tar -xzf podman-desktop.tar.gz -C podman-desktop-dir --strip-components=1
+
+        BINARY="$(pwd)/podman-desktop-dir/podman-desktop"
+        echo "binary=$BINARY" >> "$GITHUB_OUTPUT"
+        echo "PODMAN_DESKTOP_BINARY=$BINARY" >> "$GITHUB_ENV"
+
+    - name: Install Podman Desktop (Windows)
+      if: runner.os == 'Windows'
+      id: install-windows
+      shell: pwsh
+      env:
+        PD_VERSION: ${{ steps.resolve.outputs.version }}
+        PD_REPO: ${{ steps.resolve.outputs.repo }}
+      run: |
+        Write-Host "Downloading Podman Desktop $env:PD_VERSION for Windows"
+        curl.exe -sfL "https://github.com/$env:PD_REPO/releases/download/v$env:PD_VERSION/podman-desktop-$env:PD_VERSION-setup-x64.exe" -o podman-desktop-setup.exe
+        Start-Process -FilePath .\podman-desktop-setup.exe -ArgumentList '/S' -Wait
+
+        $binary = "$env:LOCALAPPDATA\Programs\Podman Desktop\Podman Desktop.exe"
+        echo "binary=$binary" >> $env:GITHUB_OUTPUT
+        echo "PODMAN_DESKTOP_BINARY=$binary" >> $env:GITHUB_ENV
